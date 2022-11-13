@@ -5,7 +5,7 @@
 #	Tue Sep 17 19:40:42 EST 1991
 #
 
-CC = gcc
+CC = gcc-8
 
 INCLUDE =
 
@@ -14,10 +14,10 @@ DEFS =
 CFLAGS = ${DEFS} ${INCLUDE}
 
 index_server:
-	${CC} -o index_server index_server.c -lnsl  
+	${CC} -o index_server index_server.c  
 
 peer:
-	${CC} -o peer peer.c  -lnsl
+	${CC} -o peer peer.c
 
 
 clean: FRC
