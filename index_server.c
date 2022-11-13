@@ -12,6 +12,12 @@
 
 #define BUFSIZE 65
 
+struct PDU
+{
+    char type;
+    char data[100];
+};
+
 int main(int argc, char *argv[])
 {
     // Address of a client
@@ -24,6 +30,7 @@ int main(int argc, char *argv[])
     int sock; // socket that the server opens
     int alen; // address length
     char buf[100];
+    struct PDU pduData;
 
     switch (argc)
     {
@@ -68,21 +75,21 @@ int main(int argc, char *argv[])
 
     while (1)
     {
-        if (recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&clientAddress, &alen) < 0)
+        if (recvfrom(sock, &pduData, sizeof(struct PDU), 0, (struct sockaddr *)&clientAddress, &alen) < 0)
         {
-            printf("buf: %s\n", &buf);
+            printf("pduData: %s\n", &pduData);
             fflush(stdout);
             fprintf(stderr, "recvfrom err\n");
             return -1;
         }
         else
         {
-            buf[strcspn(buf, "\n")] = 0;
-            printf("Received: %s\n", buf);
+            // buf[strcspn(buf, "\n")] = 0;
+            printf("Received: %s\n", &pduData);
             fflush(stdout);
         }
 
-        sendto(sock, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, alen);
+        sendto(sock, &pduData, sizeof(struct PDU), 0, (struct sockaddr *)&clientAddress, alen);
         printf("message sent\n");
         fflush(stdout);
     }

@@ -64,7 +64,7 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 	int sock;
 	int myIP;
 	unsigned int myPort;
-	char received[100];
+	struct PDU received;
 	int n;
 	int alen;
 
@@ -122,19 +122,19 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 	printf("Local port: %u\n", myPort);
 	fflush(stdout);
 
-	// registerContentPacket.data = "hola123";
-	// registerContentPacket.type = 'R';
-	write(sock, "hello", sizeof("hello"));
+	strcpy(registerContentPacket.data, "hola123");
+	registerContentPacket.type = 'R';
+	write(sock, &registerContentPacket, sizeof(struct PDU));
 	// write(sock, &registerContentPacket, sizeof(struct PDU));
 	printf("wrote message\n");
 	fflush(stdout);
 
-	n = recvfrom(sock, received, sizeof(received), MSG_WAITALL, (struct sockaddr_in *)&serverAddr, &alen);
+	// n = recvfrom(sock, received, sizeof(received), MSG_WAITALL, (struct sockaddr_in *)&serverAddr, &alen);
+	n = recvfrom(sock, &received, sizeof(struct PDU), MSG_WAITALL, (struct sockaddr *)&serverAddr, &alen);
 	if (n < 0)
 		fprintf(stderr, "Read failed\n");
 
-	received[n] = '\0';
-	printf("received: %s", &received);
+	printf("received: %s\n", &received);
 	fflush(stdout);
 
 	close(sock);
