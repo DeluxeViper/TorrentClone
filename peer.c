@@ -59,15 +59,19 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 	struct Registration regis;
 
 	struct sockaddr_in serverAddr, myAddr;
+	// pointer to host information entry
 	struct hostent *hp;
 	int sock;
 	int myIP;
 	unsigned int myPort;
+	char received[100];
+	int n;
+	int alen;
 
 	printf("port: %d\n", SERVER_PORT);
 	fflush(stdout);
 	// Connect to server
-	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+	if ((sock = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		fprintf(stderr, "Cannot open socket");
 		exit(1);
@@ -76,14 +80,14 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 	// Set server addr
 	bzero(&serverAddr, sizeof(serverAddr));
 	serverAddr.sin_family = AF_INET;
-	serverAddr.sin_addr.s_addr = inet_addr(SERVER_ADDR);
-	serverAddr.sin_port = htons(SERVER_PORT);
+	// serverAddr.sin_addr.s_addr = inet_addr(SERVER_ADDR);
+	serverAddr.sin_port = htons((u_short)SERVER_PORT);
 
 	if (hp = gethostbyname(SERVER_ADDR))
 	{
 		bcopy(hp->h_addr, (char *)&serverAddr.sin_addr, hp->h_length);
 	}
-	else if (inet_aton(SERVER_ADDR, (struct in_addr *)&serverAddr.sin_addr))
+	else if ((serverAddr.sin_addr.s_addr = inet_addr(SERVER_ADDR)) == INADDR_NONE)
 	{
 		fprintf(stderr, "Cannot get server's address\n");
 		exit(1);
@@ -95,10 +99,15 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 	if (connect(sock, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
 	{
 
-		printf("Attempted to connect to %s, %d \n", ip, serverAddr.sin_port);
+		printf("Attempted to connect to %s, %s \n", ip, ntohs(serverAddr.sin_port));
 		fprintf(stderr, "Error connecting to index server\n");
 		close(sock);
 		exit(-1);
+	}
+	else
+	{
+		printf("Connected to server\n");
+		fflush(stdout);
 	}
 
 	// Get my ip address and port
@@ -108,9 +117,28 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 	inet_ntop(AF_INET, &myAddr.sin_addr, myIP, sizeof(myIP));
 
 	myPort = ntohs(myAddr.sin_port);
-	printf("Local ip address: %d\n", myIP);
+	char *ip2 = inet_ntoa(((struct sockaddr_in *)&myAddr)->sin_addr);
+	printf("Local ip address: %s\n", ip2);
 	printf("Local port: %u\n", myPort);
 	fflush(stdout);
+
+	// registerContentPacket.data = "hola123";
+	// registerContentPacket.type = 'R';
+	write(sock, "hello", sizeof("hello"));
+	// write(sock, &registerContentPacket, sizeof(struct PDU));
+	printf("wrote message\n");
+	fflush(stdout);
+
+	n = recvfrom(sock, received, sizeof(received), MSG_WAITALL, (struct sockaddr_in *)&serverAddr, &alen);
+	if (n < 0)
+		fprintf(stderr, "Read failed\n");
+
+	received[n] = '\0';
+	printf("received: %s", &received);
+	fflush(stdout);
+
+	close(sock);
+	exit(0);
 
 	//	printf("Enter peer name: ");
 	//	scanf("%s", &regis.peerName);
@@ -120,5 +148,11 @@ void registerContent(char *SERVER_ADDR, int SERVER_PORT)
 }
 
 // Request content from index server via UDP
+void requestContentFromServer()
+{
+}
 
 // Download content via TCP
+void downloadContentFromPeer()
+{
+}

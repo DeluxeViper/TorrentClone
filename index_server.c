@@ -23,6 +23,7 @@ int main(int argc, char *argv[])
     int port; // port of server
     int sock; // socket that the server opens
     int alen; // address length
+    char buf[100];
 
     switch (argc)
     {
@@ -40,11 +41,12 @@ int main(int argc, char *argv[])
     // memset(&serverAddress, 0, sizeof(serverAddress));
     bzero((char *)&serverAddress, sizeof(struct sockaddr_in));
     serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = inet_addr("10.0.0.251");
+    // serverAddress.sin_addr.s_addr = inet_addr("10.0.0.251");
+    serverAddress.sin_addr.s_addr = INADDR_ANY;
     serverAddress.sin_port = htons(port);
 
     // Allocate a socket
-    sock = socket(AF_INET, SOCK_STREAM, 0);
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
         fprintf(stderr, "cannot create socket\n");
 
@@ -52,10 +54,12 @@ int main(int argc, char *argv[])
     if (bind(sock, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
     {
         fprintf(stderr, "cannot bind to %d port\n", port);
+        exit(EXIT_FAILURE);
     }
     else
     {
-        printf("Bound to socket");
+        printf("Bound to socket\n");
+        fflush(stdout);
     }
 
     // Queue up to 5 connect requests
@@ -64,6 +68,22 @@ int main(int argc, char *argv[])
 
     while (1)
     {
-        // if (recvfrom())
+        if (recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&clientAddress, &alen) < 0)
+        {
+            printf("buf: %s\n", &buf);
+            fflush(stdout);
+            fprintf(stderr, "recvfrom err\n");
+            return -1;
+        }
+        else
+        {
+            buf[strcspn(buf, "\n")] = 0;
+            printf("Received: %s\n", buf);
+            fflush(stdout);
+        }
+
+        sendto(sock, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, alen);
+        printf("message sent\n");
+        fflush(stdout);
     }
 }
