@@ -18,6 +18,12 @@ struct PDU
     char data[100];
 };
 
+typedef struct Address
+{
+    char *ipAddr;
+    int port;
+} Address;
+
 int main(int argc, char *argv[])
 {
     // Address of a client
@@ -82,13 +88,18 @@ int main(int argc, char *argv[])
             fprintf(stderr, "recvfrom err\n");
             return -1;
         }
-        else
+        // Received data
+        printf("Received: %s\n", &pduData);
+        fflush(stdout);
+        if (pduData.type == 'R')
         {
-            // buf[strcspn(buf, "\n")] = 0;
-            printf("Received: %s\n", &pduData);
+            printf("Received register packet\n");
             fflush(stdout);
-        }
+            // Extract peer name, content name, address details
+            // Store them in the index registry
 
+            // Send acknowledge packet
+        }
         sendto(sock, &pduData, sizeof(struct PDU), 0, (struct sockaddr *)&clientAddress, alen);
         printf("message sent\n");
         fflush(stdout);
