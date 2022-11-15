@@ -13,6 +13,13 @@ INCLUDE =
 DEFS =
 CFLAGS = ${DEFS} ${INCLUDE}
 
+server-sk:
+	${CC} -o server-sk server-sk.c  
+
+peer-sk:
+	${CC} -o peer-sk peer-sk.c
+
+
 index_server:
 	${CC} -o index_server index_server.c  
 
