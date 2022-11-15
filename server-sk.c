@@ -55,7 +55,7 @@ typedef struct
 PDU tpdu;
 
 void search(int, char *, struct sockaddr_in *);
-void registration(int, char *, struct sockaddr_in *);
+void registration(int, PDU, struct sockaddr_in, ENTRY *);
 void deregistration(int, char *, struct sockaddr_in *);
 int nameExistsInList(char *, char *);
 void printList();
@@ -122,81 +122,12 @@ int main(int argc, char *argv[])
 		/*	Content Registration Request			*/
 		if (rpdu.type == 'R')
 		{
-			char *tokArr[4]; // [0] = peerName, [1] = contentName, [2] = ip, [3] = port
-			int i = 0;
-
-			// Populate array that contains registration info (see tokArr comment for details)
-			tokArr[i] = strtok(rpdu.data, " ");
-			while (tokArr[i] != NULL)
-				tokArr[++i] = strtok(NULL, " ");
-
-			printf("Received registration packet\n");
-			// printf("peerName: %d, contentName: %d, ip: %d, port: %d", peerName, contentName, ip, port);
-			printf("tokArr: %s, %s, %s, %s\n", tokArr[0], tokArr[1], tokArr[2], tokArr[3]);
-			fflush(stdout);
-
-			// Check if connList contains the name of the peer is within the list
-			if (nameExistsInList(tokArr[0], tokArr[1]) == 1)
-			{
-				printf("NAME EXISTS IN LIST");
-				fflush(stdout);
-				spdu.type = 'E';
-				strcpy(spdu.data, ERRMSG);
-
-				// SEND ERROR TO PEER
-				sendto(s, &spdu, sizeof(PDU), 0,
-					   (struct sockaddr *)&fsin, sizeof(fsin));
-			}
-			else
-			{
-				printf("Name does not exist in list\n");
-				fflush(stdout);
-				spdu.type = 'A';
-				bzero(spdu.data, BUFLEN);
-				strcpy(spdu.data, "123");
-				ENTRY *entry = malloc(sizeof(ENTRY));
-				strcpy(entry->contentName, tokArr[1]);
-				fflush(stdout);
-
-				entry->addr.sin_family = AF_INET;
-				entry->addr.sin_port = htons(tokArr[3]);
-				entry->addr.sin_addr.s_addr = htonl(tokArr[2]); // TODO: double check this logic here
-
-				if (connList[max_index].head == NULL)
-				{
-					strcpy(connList[max_index].peerName, tokArr[0]);
-					printf("Entries are null for peer: %s\n", tokArr[0]);
-					connList[max_index].head = entry;
-					printf("entry head content name: %s\n", &connList[max_index].head->contentName);
-					fflush(stdout);
-
-					max_index++;
-					printList();
-				}
-				else
-				{
-					// Iterate through linked list until NULL is met
-					curr_entry = connList[max_index].head;
-					while (curr_entry != NULL)
-					{
-						curr_entry = curr_entry->next;
-					}
-					curr_entry = entry;
-
-					printList();
-				}
-
-				printf("spdu to send: %c, %s\n", spdu.type, spdu.data);
-				struct sockaddr_in destAddr;
-				sendto(s, &spdu, sizeof(PDU), 0,
-					   (struct sockaddr *)&fsin, sizeof(fsin));
-				printf("sent spdu\n");
-				fflush(stdout);
-			}
 
 			// If contained then send the E packet
 			/*	Call registration()
 			 */
+			// TODO: double check & for fsin
+			registration(s, rpdu, fsin, curr_entry);
 		}
 
 		/* Search Content		*/
@@ -236,10 +167,82 @@ void deregistration(int s, char *data, struct sockaddr_in *addr)
 	 */
 }
 
-void registration(int s, char *data, struct sockaddr_in *addr)
+void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 {
 	/* Register the content and the server of the content
 	 */
+	char *tokArr[4]; // [0] = peerName, [1] = contentName, [2] = ip, [3] = port
+	int i = 0;
+	PDU spdu;
+
+	// Populate array that contains registration info (see tokArr comment for details)
+	tokArr[i] = strtok(rpdu.data, " ");
+	while (tokArr[i] != NULL)
+		tokArr[++i] = strtok(NULL, " ");
+
+	printf("Received registration packet\n");
+	// printf("peerName: %d, contentName: %d, ip: %d, port: %d", peerName, contentName, ip, port);
+	printf("tokArr: %s, %s, %s, %s\n", tokArr[0], tokArr[1], tokArr[2], tokArr[3]);
+	fflush(stdout);
+
+	// Check if connList contains the name of the peer is within the list
+	if (nameExistsInList(tokArr[0], tokArr[1]) == 1)
+	{
+		printf("NAME EXISTS IN LIST");
+		fflush(stdout);
+		spdu.type = 'E';
+		strcpy(spdu.data, ERRMSG);
+
+		// SEND ERROR TO PEER
+		sendto(s, &spdu, sizeof(PDU), 0,
+			   (struct sockaddr *)&fsin, sizeof(fsin));
+	}
+	else
+	{
+		printf("Name does not exist in list\n");
+		fflush(stdout);
+		spdu.type = 'A';
+		bzero(spdu.data, BUFLEN);
+		strcpy(spdu.data, "123");
+		ENTRY *entry = malloc(sizeof(ENTRY));
+		strcpy(entry->contentName, tokArr[1]);
+		fflush(stdout);
+
+		entry->addr.sin_family = AF_INET;
+		entry->addr.sin_port = htons(tokArr[3]);
+		entry->addr.sin_addr.s_addr = htonl(tokArr[2]); // TODO: double check this logic here
+
+		if (connList[max_index].head == NULL)
+		{
+			strcpy(connList[max_index].peerName, tokArr[0]);
+			printf("Entries are null for peer: %s\n", tokArr[0]);
+			connList[max_index].head = entry;
+			printf("entry head content name: %s\n", &connList[max_index].head->contentName);
+			fflush(stdout);
+
+			max_index++;
+			printList();
+		}
+		else
+		{
+			// Iterate through linked list until NULL is met
+			curr_entry = connList[max_index].head;
+			while (curr_entry != NULL)
+			{
+				curr_entry = curr_entry->next;
+			}
+			curr_entry = entry;
+
+			printList();
+		}
+
+		printf("spdu to send: %c, %s\n", spdu.type, spdu.data);
+		struct sockaddr_in destAddr;
+		sendto(s, &spdu, sizeof(PDU), 0,
+			   (struct sockaddr *)&fsin, sizeof(fsin));
+		printf("sent spdu\n");
+		fflush(stdout);
+	}
 }
 
 // If found then return 1, if not found then return 0
