@@ -126,7 +126,6 @@ int main(int argc, char *argv[])
 			// If contained then send the E packet
 			/*	Call registration()
 			 */
-			// TODO: double check & for fsin
 			registration(s, rpdu, fsin, curr_entry);
 		}
 
