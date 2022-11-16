@@ -23,7 +23,7 @@ E - Error messages from the Server
 #include <arpa/inet.h>
 
 #define ERRMSG "Content name already exists"
-#define MSG1 "Cannot find content"
+#define CONTENT_NOT_FOUND "Cannot find content from other peers"
 #define BUFLEN 100
 #define NAMESIZ 20
 #define MAX_NUM_CON 200
@@ -54,7 +54,7 @@ typedef struct
 
 PDU tpdu;
 
-void search(int, char *, struct sockaddr_in *);
+struct sockaddr_in *search(int, char *, char *);
 void registration(int, PDU, struct sockaddr_in, ENTRY *);
 void deregistration(int, char *, struct sockaddr_in *);
 int nameExistsInList(char *, char *);
@@ -132,8 +132,48 @@ int main(int argc, char *argv[])
 		/* Search Content		*/
 		if (rpdu.type == 'S')
 		{
-			/* Call search()
-			 */
+			// Note: rpdu.data = <peerName> <contentName>
+			printf("Searching content:\n");
+			fflush(stdout);
+			struct sockaddr_in *clientAddr = NULL;
+
+			// Parsing peer name and content name from rpdu.data
+			char *peerName, *contentName;
+			peerName = strtok(rpdu.data, " ");
+			contentName = strtok(NULL, " ");
+
+			printf("parsed rpdu data: %s, %s\n", peerName, contentName);
+			fflush(stdout);
+			clientAddr = search(s, contentName, peerName);
+			if (clientAddr != NULL)
+			{
+				char *ip2 = inet_ntoa(((struct sockaddr_in *)&clientAddr)->sin_addr);
+				printf("found clientAddr: %s, %u\n", ip2, ntohs(clientAddr->sin_port));
+				spdu.type = 'S';
+				char address[100];
+				bzero(address, sizeof(address));
+				strcat(address, ip2);
+				strcat(address, " ");
+				sprintf(address + strlen(address), "%d", ntohs(clientAddr->sin_port));
+				// strcat(address, ntohs(clientAddr->sin_port));
+				printf("address to send: %s\n", address);
+
+				strcpy(spdu.data, address);
+				sendto(s, &spdu, sizeof(PDU), 0,
+					   (struct sockaddr *)&fsin, sizeof(fsin));
+				printf("sent spdu\n");
+				fflush(stdout);
+			}
+			else
+			{
+				printf("Content not found\n");
+				spdu.type = 'E';
+				strcpy(spdu.data, CONTENT_NOT_FOUND);
+				sendto(s, &spdu, sizeof(PDU), 0,
+					   (struct sockaddr *)&fsin, sizeof(fsin));
+				printf("sent spdu\n");
+				fflush(stdout);
+			}
 		}
 
 		/*	List current Content */
@@ -153,11 +193,35 @@ int main(int argc, char *argv[])
 	return;
 }
 
-void search(int s, char *data, struct sockaddr_in *addr)
+struct sockaddr_in *search(int s, char *contentName, char *peerName)
 {
 	/* Search content list and return the answer:
 	   If found, send the address of the selected content server.
 	*/
+	ENTRY *entry;
+	int i = 0;
+
+	for (i = 0; i < max_index; i++)
+	{
+		if (strcmp(peerName, connList[i].peerName) == 0)
+		{
+			continue;
+		}
+		// Iterate through the linked list to check if content name exists
+		entry = connList[i].head;
+		while (entry != NULL)
+		{
+			// Check for content name match
+			if (strcmp(entry->contentName, contentName) == 0)
+			{
+				// printf("entry content name: %s, contentName comparing: %s\n", entry->contentName, contentName);
+				return &entry->addr;
+			}
+			entry = entry->next;
+		}
+	}
+
+	return NULL;
 }
 
 void deregistration(int s, char *data, struct sockaddr_in *addr)
@@ -180,7 +244,7 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 		tokArr[++i] = strtok(NULL, " ");
 
 	printf("Received registration packet\n");
-	// printf("peerName: %d, contentName: %d, ip: %d, port: %d", peerName, contentName, ip, port);
+	//  printf("peerName: %d, contentName: %d, ip: %d, port: %d", peerName, contentName, ip, port);
 	printf("tokArr: %s, %s, %s, %s\n", tokArr[0], tokArr[1], tokArr[2], tokArr[3]);
 	fflush(stdout);
 

@@ -50,7 +50,7 @@ int fd, nfds;
 fd_set rfds, afds;
 
 void registration(int, char *, struct sockaddr_in, int);
-int search_content(int, char *, PDU *);
+int search_content(int, char *, struct sockaddr_in, int);
 int client_download(char *, PDU *);
 void server_download();
 void deregistration(int, char *);
@@ -173,6 +173,7 @@ int main(int argc, char **argv)
 			if (c == 'D')
 			{
 				/* Call search_content()	*/
+				search_content(serverSock, usr, sin, alen);
 				/* Call client_download()	*/
 				/* Call registration()		*/
 			}
@@ -216,11 +217,41 @@ void server_download()
 	/* Respond to the download request from a peer	*/
 }
 
-int search_content(int serverSock, char *name, PDU *rpdu)
+int search_content(int serverSock, char *name, struct sockaddr_in server, int alen)
 {
 	/* Contact index server to search for the content
 	   If the content is available, the index server will return
 	   the IP address and port number of the content server.	*/
+	PDU spdu;
+
+	spdu.type = 'S';
+
+	strcpy(spdu.data, name);
+	strcat(spdu.data, " ");
+	printf("Enter content name you want to search:");
+	scanf("%s", spdu.data + strlen(spdu.data));
+
+	printf("searching spdu data: %s\n", spdu.data);
+	fflush(stdout);
+	// Send S PDU packet
+	write(serverSock, &spdu, sizeof(PDU));
+	alen = sizeof(server);
+
+	int k = recvfrom(serverSock, &rpdu, sizeof(PDU), 0,
+					 (struct sockaddr *)&server, &alen);
+	if (k < 0)
+	{
+		fprintf(stderr, "Read failed: %d, %s\n", k, strerror(errno));
+	}
+
+	if (rpdu.type == 'E')
+	{
+		printf("%s\n", rpdu.data);
+	}
+	else if (rpdu.type == 'S')
+	{
+		printf("Content successfully found\n");
+	}
 }
 
 int client_download(char *name, PDU *pdu)
