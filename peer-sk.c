@@ -55,8 +55,8 @@ fd_set current_sockets, ready_sockets;
 int maxRegContent = 0;
 
 void registration(int, char *, struct sockaddr_in, int);
-char *search_content(int, char *, struct sockaddr_in, int);
-void client_download(char *);
+char *search_content(int, char *, struct sockaddr_in, int, char *);
+void client_download(char *, char *, char *);
 void server_download();
 void deregistration(int, char *);
 void online_list(int);
@@ -189,15 +189,19 @@ int main(int argc, char **argv)
 		/*	Download Content	*/
 		if (c == 'D')
 		{
-			/* Call search_content()	*/
+			// Enter content name
+			char contentName[100];
+
+			printf("Enter content name you want to search:");
+			scanf("%s", contentName);
+
 			char *contentAddrInfo = NULL;
-			// strcpy(contentAddrInfo, search_content(serverSock, usr, sin, alen));
-			contentAddrInfo = search_content(serverSock, usr, sin, alen);
+			contentAddrInfo = search_content(serverSock, usr, sin, alen, contentName);
 			printf("contentAddrInfo: %s\n", contentAddrInfo);
 			if (contentAddrInfo != NULL)
 			{
 				// Content address info retrieved
-				client_download(contentAddrInfo);
+				client_download(contentAddrInfo, usr, contentName);
 			}
 			/* Call registration()		*/
 		}
@@ -254,7 +258,7 @@ void server_download()
  * @param clientAddrInfo - in the format of "<ipAddress> <portNumber>"
  * @return int
  */
-void client_download(char *clientAddrInfo)
+void client_download(char *clientAddrInfo, char *usr, char *contentName)
 {
 	struct hostent *he;
 	int alen;
@@ -266,7 +270,6 @@ void client_download(char *clientAddrInfo)
 	ipAddr = strtok(clientAddrInfo, " ");
 	port = strtok(NULL, " ");
 
-	// strcpy(ipAddr, "0.0.0.0");
 	printf("parsed clientAddrInfo: %s, %s\n", ipAddr, port);
 	// Send TCP packet to client server
 	int serverTcpSock;
@@ -299,13 +302,49 @@ void client_download(char *clientAddrInfo)
 	}
 
 	printf("Transmit to tcp sock:%d \n", serverTcpSock);
-	// TODO: DOES THIS WORK? How would you get listen for this write?
-	// 	Solution -> gotta use FDSET to somehow set the socket that you're
-	// 		listening to, see open web browser for it
-	char buf3[100];
-	strcpy(buf3, "helloFromPeer");
+	// Send download packet to content server to retrieve
+	PDU dPacket, cPacket;
+	int isInitPacketRead = 0;
+	FILE *fp;
+	char *readBf = malloc(sizeof(char) * 100);
+	bzero(dPacket.data, BUFLEN);
+	strcat(dPacket.data, usr);
+	strcat(dPacket.data, " ");
+	strcat(dPacket.data, contentName);
+	dPacket.type = 'D';
 
-	write(serverTcpSock, buf3, 100);
+	write(serverTcpSock, &dPacket, sizeof(PDU));
+
+	// Receive file
+	printf("entering while loop\n");
+	bzero(cPacket.data, sizeof(cPacket.data));
+	bzero(readBf, sizeof(cPacket.data));
+	int m;
+	// Write to file based on receiving content packets
+	while ((m = read(serverTcpSock, &cPacket, sizeof(PDU))) > 0)
+	{
+		strcpy(readBf, &cPacket.data);
+		printf("readBf: %s\n", readBf);
+		if (cPacket.type == 'E')
+		{
+			fprintf(stderr, "Error, file does not exist.\n");
+			break;
+		}
+		else if (isInitPacketRead == 0)
+		{
+			// File does not exist and not an error
+			printf("Opened file\n");
+			fp = fopen(contentName, "w+");
+		}
+		// Write to the file
+		readBf[strcspn(readBf, "\n")] = 0;
+		readBf[strlen(readBf)] = '\0';
+		printf("fp: %s", fp);
+		fwrite(readBf, 100, 100, fp);
+		isInitPacketRead = 1;
+		printf("wrote to file\n");
+	}
+	fclose(fp);
 	return;
 }
 /**
@@ -315,10 +354,11 @@ void client_download(char *clientAddrInfo)
  * @param name
  * @param server
  * @param alen
+ * @param contentName
  * @return char* - a string that is NULL if no content is found
  * 				- if content is found, returns a string of the format "<ipAddress> <portNumber>"
  */
-char *search_content(int serverSock, char *name, struct sockaddr_in server, int alen)
+char *search_content(int serverSock, char *name, struct sockaddr_in server, int alen, char *contentName)
 {
 	/* Contact index server to search for the content
 	   If the content is available, the index server will return
@@ -329,9 +369,7 @@ char *search_content(int serverSock, char *name, struct sockaddr_in server, int 
 
 	strcpy(spdu.data, name);
 	strcat(spdu.data, " ");
-	printf("Enter content name you want to search:");
-	scanf("%s", spdu.data + strlen(spdu.data));
-
+	strcat(spdu.data, contentName);
 	printf("searching spdu data: %s\n", spdu.data);
 	fflush(stdout);
 	// Send S PDU packet
@@ -463,40 +501,91 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 
 		int n;
 		char buf2[100];
-		// memset(buf2, '\0', sizeof(char) * 100);
+		PDU downloadPacket;
 		struct sockaddr_in client;
 		int client_len = sizeof(struct sockaddr_in);
+
+		// Create a forked process to listen to TCP content server
 		switch (fork())
 		{
 		case 0:
 			while (1)
 			{
-				printf("we in the forked child\n");
-				// if (
+				char fileBuf[BUFLEN];
+				int readBufPointer = 0, display;
+				PDU contentPacket;
+				char *contentName;
+				char *usr;
+				FILE *fp;
+				// Accept any new TCP connection
 				new_sd = accept(tcpSock, (struct sockaddr *)&client, &client_len);
-				// ) < 0)
-				// {
-				// fprintf(stderr, "Cannot accept client\n");
-				// exit(1);
-				// }
-				printf("accepted new client, waiting for message, %d\n", new_sd);
-				//				n = recv(new_sd, buf2, 100);
 
-				// printf("packet received from tcp: %s\n", buf2);
-				// while (1)
-				// {
-				n = recv(new_sd, &buf2, 100, 0);
-				// if (n < 0)
-				// continue;
-				printf("packet received from tcp client: %s\n", buf2);
+				printf("accepted new client, waiting for message, %d\n", new_sd);
+
+				bzero(downloadPacket.data, BUFLEN);
+				// Receive download packet: TYPE | user | content name
+				n = recv(new_sd, &downloadPacket, sizeof(PDU), 0);
+				printf("packet received from tcp client: %s\n", downloadPacket.data);
+
+				// Parse info from download packet
+				usr = strtok(downloadPacket.data, " ");
+				contentName = strtok(NULL, " ");
+
+				printf("usr: %s, contentName: %s\n", usr, contentName);
 				fflush(stdout);
-				// }
+
+				contentName[strcspn(contentName, "\n")] = 0;
+				fp = fopen(contentName, "r");
+				if (fp == NULL)
+				{
+					// File does not exist
+					fprintf(stderr, "Error, file does not exist.\n", 27);
+					contentPacket.type = 'E';
+					strcpy(contentPacket.data, "Error, file does not exist.");
+					write(new_sd, &contentPacket, sizeof(PDU));
+				}
+				else
+				{
+					// File exists
+					printf("File exists\n");
+					while (1)
+					{
+						// TODO: Currently getting stuck sending the file if it exists
+						// reading file
+						display = fgetc(fp);
+						contentPacket.data[readBufPointer] = display;
+						readBufPointer++;
+
+						if (readBufPointer == BUFLEN)
+						{
+							// send file contents
+							contentPacket.type = 'C';
+							// strcpy(contentPacket.data, fileBuf);
+							printf("sending content packet: %s\n", contentPacket.data);
+							fflush(stdout);
+							write(new_sd, &contentPacket, sizeof(PDU));
+							readBufPointer = 0;
+							bzero(contentPacket.data, sizeof(contentPacket.data));
+						}
+
+						if (feof(fp) || display == EOF)
+						{
+							if (readBufPointer != 0)
+							{
+								printf("sending finished content packet: %s\n", contentPacket.data);
+								fflush(stdout);
+								contentPacket.type = 'C';
+								// strcpy(contentPacket.data, fileBuf);
+								write(new_sd, &contentPacket, sizeof(PDU));
+							}
+							break;
+						}
+					}
+					printf("closed fp\n");
+					fclose(fp);
+				}
 			}
 			close(new_sd);
-			// child listens to the TCP connection
-			// while (1)
-			// {
-			// }
 			break;
 		case -1:
 			fprintf(stderr, "Error was found while creating child process");
