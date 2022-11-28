@@ -147,14 +147,14 @@ int main(int argc, char *argv[])
 			clientAddr = search(s, contentName, peerName);
 			if (clientAddr != NULL)
 			{
-				char *ip2 = inet_ntoa(((struct sockaddr_in *)&clientAddr)->sin_addr);
-				printf("found clientAddr: %s, %u\n", ip2, ntohs(clientAddr->sin_port));
+				char *ip2 = inet_ntoa(((struct sockaddr_in *)clientAddr)->sin_addr);
+				printf("found clientAddr: %s, %u\n", ip2, clientAddr->sin_port);
 				spdu.type = 'S';
 				char address[100];
 				bzero(address, sizeof(address));
 				strcat(address, ip2);
 				strcat(address, " ");
-				sprintf(address + strlen(address), "%d", ntohs(clientAddr->sin_port));
+				sprintf(address + strlen(address), "%d", clientAddr->sin_port);
 				// strcat(address, ntohs(clientAddr->sin_port));
 				printf("address to send: %s\n", address);
 
@@ -215,6 +215,7 @@ struct sockaddr_in *search(int s, char *contentName, char *peerName)
 			if (strcmp(entry->contentName, contentName) == 0)
 			{
 				// printf("entry content name: %s, contentName comparing: %s\n", entry->contentName, contentName);
+				// printf("entry ip addr: %s", inet_ntoa(((struct sockaddr_in *)&entry->addr)->sin_addr));
 				return &entry->addr;
 			}
 			entry = entry->next;
@@ -234,7 +235,7 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 {
 	/* Register the content and the server of the content
 	 */
-	char *tokArr[4]; // [0] = peerName, [1] = contentName, [2] = ip, [3] = port
+	char *tokArr[4]; // [0] = peerName, [1] = contentName, [2] = ip, [3] = port (host format)
 	int i = 0;
 	PDU spdu;
 
@@ -262,19 +263,22 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 	}
 	else
 	{
+		// Content was not found, prepare A packet to be sent
 		printf("Name does not exist in list\n");
 		fflush(stdout);
 		spdu.type = 'A';
 		bzero(spdu.data, BUFLEN);
-		strcpy(spdu.data, "123");
+
+		// Populate entry with address and content name value received
 		ENTRY *entry = malloc(sizeof(ENTRY));
 		strcpy(entry->contentName, tokArr[1]);
-		fflush(stdout);
 
 		entry->addr.sin_family = AF_INET;
-		entry->addr.sin_port = htons(tokArr[3]);
-		entry->addr.sin_addr.s_addr = htonl(tokArr[2]); // TODO: double check this logic here
+		entry->addr.sin_port = atoi(tokArr[3]); // convert ip address back to host
+		entry->addr.sin_addr.s_addr = inet_addr(tokArr[2]);
 
+		// If peer is registering it's first content, then add it first to the
+		// 	connection list
 		if (connList[max_index].head == NULL)
 		{
 			strcpy(connList[max_index].peerName, tokArr[0]);
@@ -288,7 +292,7 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 		}
 		else
 		{
-			// Iterate through linked list until NULL is met
+			// Peer has registered content before, simply add content to the linkedlist
 			curr_entry = connList[max_index].head;
 			while (curr_entry != NULL)
 			{
@@ -299,6 +303,8 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 			printList();
 		}
 
+		// Send SPU -> which will either be an A packet or an E packet based
+		// 	on whether the content was found
 		printf("spdu to send: %c, %s\n", spdu.type, spdu.data);
 		struct sockaddr_in destAddr;
 		sendto(s, &spdu, sizeof(PDU), 0,
@@ -350,7 +356,10 @@ void printList()
 		while (entry != NULL)
 		{
 			printf("\t\tEntry: %d ", j++);
-			printf("contentName: %s\n", entry->contentName);
+			// char *ip = inet_ntop(((struct sockaddr_in *)&entry->addr)->sin_addr);
+			char ip[100];
+			inet_ntop(AF_INET, &(((struct sockaddr_in *)&entry->addr)->sin_addr), ip, 100);
+			printf("contentName: %s, ip: %s, port: %d\n", entry->contentName, ip, entry->addr.sin_port);
 			entry = entry->next;
 		}
 	}
