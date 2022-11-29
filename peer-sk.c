@@ -325,7 +325,7 @@ void client_download(char *clientAddrInfo, char *usr, char *contentName)
 	while ((m = read(serverTcpSock, &cPacket, sizeof(PDU))) > 0)
 	{
 		strcpy(readBf, &cPacket.data);
-		printf("readBf: %s\n", readBf);
+		printf("type: %c, readBf: %s\n", cPacket.type, readBf);
 		if (cPacket.type == 'E')
 		{
 			fprintf(stderr, "Error, file does not exist.\n");
@@ -344,6 +344,8 @@ void client_download(char *clientAddrInfo, char *usr, char *contentName)
 		fwrite(readBf, 100, 100, fp);
 		isInitPacketRead = 1;
 		printf("wrote to file\n");
+		if (cPacket.type == 'F')
+			break;
 	}
 	fclose(fp);
 	return;
@@ -406,10 +408,12 @@ void deregistration(int serverSock, char *name, struct sockaddr_in server)
 	PDU tPacket, rpdu;
 	// Tpacket -> T | usr | contentName
 	tPacket.type = 'T';
+	bzero(tPacket.data, BUFLEN);
 	strcat(tPacket.data, usr);
 	strcat(tPacket.data, " ");
 	strcat(tPacket.data, name);
 
+	printf("Attempting to deregister user: %s with content: %s\n", usr, name);
 	write(serverSock, &tPacket, sizeof(PDU));
 	int alen = sizeof(server);
 
@@ -482,10 +486,9 @@ void registration(int serverSock, char *name, struct sockaddr_in server, char *p
 	inet_ntop(AF_INET, &tcpAddr.sin_addr, myIP, sizeof(myIP));
 
 	myPort = htons(tcpAddr.sin_port);
-	// printf("Actual port (?????): %d\n", htons(tcpAddr.sin_port));
 	char *ip2 = inet_ntoa(((struct sockaddr_in *)&tcpAddr)->sin_addr);
-	printf("Local ip address: %s, myIP: %s\n", ip2, myIP);
-	printf("Local port: %u\n", myPort);
+	// printf("Local ip address: %s, myIP: %s\n", ip2, myIP);
+	// printf("Local port: %u\n", myPort);
 	fflush(stdout);
 
 	// Transferring peer name, content name, tcp ip address, tcp port info into buf variable
@@ -502,10 +505,9 @@ void registration(int serverSock, char *name, struct sockaddr_in server, char *p
 	}
 	else
 	{
-		strcpy(contentName, providedContentName);
+		printf("providedContentName: %s\n", providedContentName);
+		strcpy(&buf[9], providedContentName);
 	}
-
-	// scanf("%s", &buf[9]);
 
 	memset(buf + strlen(buf), ' ', 100 - strlen(buf) - 1);
 	strcpy(buf + 19, ip2);
@@ -597,7 +599,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, char *p
 				else
 				{
 					// File exists
-					printf("File exists\n");
 					while (1)
 					{
 						// reading file
@@ -620,29 +621,26 @@ void registration(int serverSock, char *name, struct sockaddr_in server, char *p
 						{
 							if (readBufPointer != 0)
 							{
-								printf("sending finished content packet: %s\n", contentPacket.data);
 								fflush(stdout);
-								contentPacket.type = 'C';
+								contentPacket.type = 'F';
 								write(new_sd, &contentPacket, sizeof(PDU));
 							}
 							break;
 						}
 					}
-					printf("closed fp\n");
 					fclose(fp);
+					// Deregister content
+					deregistration(serverSock, contentName, server);
+					break;
 				}
 			}
 			close(new_sd);
+			printf("Closed tcp sock");
 			break;
 		case -1:
 			fprintf(stderr, "Error was found while creating child process");
 			break;
 		}
-		// pthread_t tid;
-		// //  Creating thread to keep receiving messages in real time
-		// printf("creating thread with tcpSock: %d\n", tcpSock);
-		// pthread_create(&tid, NULL, receive_thread, (void *)tcpSock);
-
 		printRegisteredContent();
 	}
 	else if (rpdu.type == 'E')

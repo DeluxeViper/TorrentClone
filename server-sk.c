@@ -191,7 +191,7 @@ int main(int argc, char *argv[])
 		{
 			/* Call deregistration()
 			 */
-			deregistration(s, rpdu.data, fsin);
+			deregistration(s, &rpdu.data, fsin);
 		}
 	}
 	return;
@@ -210,6 +210,7 @@ void deregistration(int s, char *data, struct sockaddr_in fsin)
 	usr = strtok(data, " ");
 	contentName = strtok(NULL, " ");
 
+	printf("Unregistering peer: %s with content name: %s\n", usr, contentName);
 	// Find data within linked list and remove it
 	ENTRY *temp, *prev;
 	int i = 0, j = 0;
@@ -230,7 +231,6 @@ void deregistration(int s, char *data, struct sockaddr_in fsin)
 		// Remove content
 		if (temp != NULL && strcmp(temp->contentName, contentName) == 0)
 		{
-			printf("hola\n");
 			connList[i].head = temp->next;
 			free(temp);
 			if (connList[i].head == NULL)
@@ -267,12 +267,14 @@ void deregistration(int s, char *data, struct sockaddr_in fsin)
 	{
 		// No match found
 		aPacket.type = 'E';
+		printf("Error with deregistration.\n");
 		strcpy(aPacket.data, "Error with deregistration, no match was found");
 	}
 	else
 	{
 		// Match found
 		aPacket.type = 'A';
+		printf("Deregistration successful.\n");
 		strcpy(aPacket.data, "Acknowledged");
 	}
 
