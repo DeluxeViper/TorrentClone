@@ -59,6 +59,7 @@ void registration(int, PDU, struct sockaddr_in);
 void deregistration(int, char *, struct sockaddr_in);
 int nameExistsInList(char *, char *);
 void printList();
+void onlineList(int, char *, struct sockaddr_in);
 void printListWithHead(ENTRY *);
 
 /*
@@ -184,6 +185,7 @@ int main(int argc, char *argv[])
 		{
 			/* Read from the content list and send the list to the
 			   client 		*/
+			onlineList(s, &rpdu.data, fsin);
 		}
 
 		/*	De-registration		*/
@@ -195,6 +197,36 @@ int main(int argc, char *argv[])
 		}
 	}
 	return;
+}
+
+void onlineList(int s, char *peerName, struct sockaddr_in fsin)
+{
+	PDU oPacket;
+	int i;
+	ENTRY *entry;
+
+	printf("Sending online list for peer: %s", peerName);
+
+	bzero(oPacket.data, BUFLEN);
+	for (i = 0; i < max_index; i++)
+	{
+		if (strcmp(connList[i].peerName, peerName) != 0)
+			continue;
+		// Peer name matches
+		entry = connList[i].head;
+		while (entry != NULL && entry->contentName != NULL)
+		{
+			strcat(oPacket.data, entry->contentName);
+			entry = entry->next;
+			if (entry != NULL)
+				strcat(oPacket.data, " ");
+		}
+		break;
+	}
+	oPacket.type = 'O';
+	printf("oPacket data: %s", oPacket.data);
+	sendto(s, &oPacket, sizeof(PDU), 0,
+		   (struct sockaddr *)&fsin, sizeof(fsin));
 }
 
 void deregistration(int s, char *data, struct sockaddr_in fsin)

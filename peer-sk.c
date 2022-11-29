@@ -59,10 +59,9 @@ char *search_content(int, char *, struct sockaddr_in, int, char *);
 void client_download(char *, char *, char *);
 void server_download();
 void deregistration(int, char *, struct sockaddr_in);
-void online_list(int);
+void onlineList(int, struct sockaddr_in);
 void local_list();
-void quit(int);
-void handler();
+void quit(int, struct sockaddr_in);
 void printRegisteredContent();
 void removeElementFromRegistration(int);
 
@@ -136,10 +135,10 @@ int main(int argc, char **argv)
 		registeredContent[n].tcpSock = -1;
 
 	/*	Setup signal handler		*/
-	sa.sa_handler = handler;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags;
-	sigaction(SIGINT, &sa, NULL);
+	// sa.sa_handler = handler;
+	// sigemptyset(&sa.sa_mask);
+	// sa.sa_flags;
+	// sigaction(SIGINT, &sa, NULL);
 
 	char contentName[100];
 	/* Main Loop	*/
@@ -174,20 +173,19 @@ int main(int argc, char **argv)
 		/*	List Content		*/
 		if (c == 'L')
 		{
-			/* Call local_list()	*/
+			printRegisteredContent();
 		}
 
 		/*	List on-line Content	*/
 		if (c == 'O')
 		{
-			/* Call online_list()	*/
+			onlineList(serverSock, sin);
 		}
 
 		/*	Download Content	*/
 		if (c == 'D')
 		{
 			// Enter content name
-
 			printf("Enter content name you want to search:");
 			scanf("%s", contentName);
 
@@ -207,7 +205,6 @@ int main(int argc, char **argv)
 		/*	Content Deregistration	*/
 		if (c == 'T')
 		{
-			/* Call deregistration()	*/
 			printf("Enter content name you want to deregister:");
 			scanf("%s", contentName);
 			deregistration(serverSock, contentName, sin);
@@ -216,41 +213,120 @@ int main(int argc, char **argv)
 		/*	Quit	*/
 		if (c == 'Q')
 		{
-			/* Call quit()	*/
+			quit(serverSock, sin);
 		}
-		// }
-
-		/* Content transfer: Server to client		*/
-		// else
-		// {
-		// 	server_download(serverSock);
-		// }
 	}
 }
 
-void quit(int serverSock)
+void quit(int serverSock, struct sockaddr_in server)
 {
+	printf("Attempting to deregister all content from %s\n", usr);
 	/* De-register all the registrations in the index server	*/
+	int max = maxRegContent;
+	for (int j = 0; j < max; j++)
+	{
+		// printf("j: %d, Attempting to deregister content: %s\n", j, registeredContent[0].name);
+		deregistration(serverSock, registeredContent[0].name, server);
+	}
+	maxRegContent = 0;
+	return;
 }
 
-void local_list()
+void onlineList(int serverSock, struct sockaddr_in server)
 {
-	/* List local content	*/
-}
+	printf("Online List:\n");
+	fflush(stdout);
+	// oPacket -> Type | usr
+	PDU oPacket, receivedPdu;
+	char *tokArr[10];
+	oPacket.type = 'O';
+	bzero(oPacket.data, BUFLEN);
+	strcpy(oPacket.data, usr);
 
-void online_list(int serverSock)
-{
+	write(serverSock, &oPacket, sizeof(PDU));
+	int alen = sizeof(server);
+
+	// Receive acknowledgement or error from server
+	int k = recvfrom(serverSock, &receivedPdu, sizeof(PDU), 0,
+					 (struct sockaddr *)&server, &alen);
+
+	if (receivedPdu.type == 'O')
+	{
+		printf("Contents: %s\n", receivedPdu.data);
+		// Retrieve data, each content name is separated by spaces
+		// int l = 0;
+		// tokArr[l] = strtok(receivedPdu.data, " ");
+		// if (tokArr[l] == NULL)
+		// {
+		// 	printf("\tNo content has been registered to the index server.\n");
+		// 	return;
+		// }
+		// printf("\tContent: %s\n", tokArr[l]);
+		// while (tokArr[l] != NULL)
+		// {
+		// 	tokArr[l] = strtok(NULL, " ");
+		// 	if (tokArr[l] == NULL)
+		// 		break;
+		// 	printf("\tContent: %s\n", tokArr[l]);
+		// 	l++;
+		// }
+	}
+	else if (receivedPdu.type == 'E')
+	{
+		printf("\tError attempting to retrieve online list.\n");
+	}
 	/* Contact index server to acquire the list of content */
 }
 
-void server_download()
+void deregistration(int serverSock, char *name, struct sockaddr_in server)
 {
-	/* Respond to the download request from a peer	*/
-	printf("\nwe in server_download()\n");
-	fflush(stdout);
-	// Iterate through locally registered content
-	// 	find the matching content name, use FD logic
-	// 	to select the TCP socket described there
+	/* Contact the index server to deregister a content registration;	   Update nfds. */
+	PDU tPacket, rpdu;
+	// Tpacket -> T | usr | contentName
+	tPacket.type = 'T';
+	bzero(tPacket.data, BUFLEN);
+	strcat(tPacket.data, usr);
+	strcat(tPacket.data, " ");
+	strcat(tPacket.data, name);
+
+	printf("Attempting to deregister user: %s with content: %s\n", usr, name);
+	write(serverSock, &tPacket, sizeof(PDU));
+	int alen = sizeof(server);
+
+	// Receive acknowledgement or error from server
+	int k = recvfrom(serverSock, &rpdu, sizeof(PDU), 0,
+					 (struct sockaddr *)&server, &alen);
+
+	if (rpdu.type == 'A')
+	{
+		printf("Deregistered content: %s, maxRegContent: %d\n", name, maxRegContent);
+		// Remove registered content from the list
+		for (int i = 0; i <= maxRegContent; i++)
+		{
+			// printf("comparing reg content: %s, %s\n", registeredContent[i].name, name);
+			if (strcmp(registeredContent[i].name, name) == 0)
+			{
+				// printf("removing local registered content\n");
+				removeElementFromRegistration(i);
+				printRegisteredContent();
+			}
+		}
+	}
+	else if (rpdu.type == 'E')
+	{
+		printf("%s\n", rpdu.data);
+	}
+	return;
+}
+
+void removeElementFromRegistration(int pos)
+{
+	// shift all the element from index+1 by one position to the left
+	for (int i = pos; i < maxRegContent - 1; i++)
+		registeredContent[i] = registeredContent[i + 1];
+	strcpy(registeredContent[maxRegContent].name, "");
+	registeredContent[maxRegContent].tcpSock = 0;
+	maxRegContent--;
 }
 
 /**
@@ -397,57 +473,6 @@ char *search_content(int serverSock, char *name, struct sockaddr_in server, int 
 		return buf;
 	}
 	return NULL;
-}
-
-void deregistration(int serverSock, char *name, struct sockaddr_in server)
-{
-	/* Contact the index server to deregister a content registration;	   Update nfds. */
-	PDU tPacket, rpdu;
-	// Tpacket -> T | usr | contentName
-	tPacket.type = 'T';
-	bzero(tPacket.data, BUFLEN);
-	strcat(tPacket.data, usr);
-	strcat(tPacket.data, " ");
-	strcat(tPacket.data, name);
-
-	printf("Attempting to deregister user: %s with content: %s\n", usr, name);
-	write(serverSock, &tPacket, sizeof(PDU));
-	int alen = sizeof(server);
-
-	// Receive acknowledgement or error from server
-	int k = recvfrom(serverSock, &rpdu, sizeof(PDU), 0,
-					 (struct sockaddr *)&server, &alen);
-
-	if (rpdu.type == 'A')
-	{
-		printf("Deregistered content: %s, maxRegContent: %d\n", name, maxRegContent);
-		// Remove registered content from the list
-		for (int i = 0; i < maxRegContent; i++)
-		{
-			printf("comparing reg content: %s, %s\n", registeredContent[i].name, name);
-			if (strcmp(registeredContent[i].name, name) == 0)
-			{
-				printf("removing local registered content\n");
-				removeElementFromRegistration(i);
-				printRegisteredContent();
-			}
-		}
-	}
-	else if (rpdu.type == 'E')
-	{
-		printf("%s\n", rpdu.data);
-	}
-	return;
-}
-
-void removeElementFromRegistration(int pos)
-{
-	// shift all the element from index+1 by one position to the left
-	for (int i = pos; i < maxRegContent - 1; i++)
-		registeredContent[i] = registeredContent[i + 1];
-	strcpy(registeredContent[maxRegContent].name, "");
-	registeredContent[maxRegContent].tcpSock = 0;
-	maxRegContent--;
 }
 
 void registration(int serverSock, char *name, struct sockaddr_in server, char *providedContentName)
@@ -647,15 +672,10 @@ void registration(int serverSock, char *name, struct sockaddr_in server, char *p
 	}
 }
 
-void handler()
-{
-	quit(serverSock);
-}
-
 void printRegisteredContent()
 {
 	int i = 0;
-	printf("\nPrinting registered content\n");
+	printf("\nPrinting registered content, maxRegContent: %d\n", maxRegContent);
 	for (i = 0; i < maxRegContent; i++)
 	{
 		if (registeredContent[i].tcpSock == -1)
