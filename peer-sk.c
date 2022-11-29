@@ -325,7 +325,7 @@ void client_download(char *clientAddrInfo, char *usr, char *contentName)
 	while ((m = read(serverTcpSock, &cPacket, sizeof(PDU))) > 0)
 	{
 		strcpy(readBf, &cPacket.data);
-		printf("type: %c, readBf: %s\n", cPacket.type, readBf);
+		printf("type: %c, file data: %s\n", cPacket.type, readBf);
 		if (cPacket.type == 'E')
 		{
 			fprintf(stderr, "Error, file does not exist.\n");
@@ -334,16 +334,13 @@ void client_download(char *clientAddrInfo, char *usr, char *contentName)
 		else if (isInitPacketRead == 0)
 		{
 			// File does not exist and not an error
-			printf("Opened file\n");
 			fp = fopen(contentName, "w+");
 		}
 		// Write to the file
 		readBf[strcspn(readBf, "\n")] = 0;
 		readBf[strlen(readBf)] = '\0';
-		printf("fp: %s", fp);
-		fwrite(readBf, 100, 100, fp);
+		fwrite(readBf, 1, strlen(readBf) - 1, fp);
 		isInitPacketRead = 1;
-		printf("wrote to file\n");
 		if (cPacket.type == 'F')
 			break;
 	}
@@ -624,6 +621,7 @@ void registration(int serverSock, char *name, struct sockaddr_in server, char *p
 								fflush(stdout);
 								contentPacket.type = 'F';
 								write(new_sd, &contentPacket, sizeof(PDU));
+								readBufPointer = 0;
 							}
 							break;
 						}
