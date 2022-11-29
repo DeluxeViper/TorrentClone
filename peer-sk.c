@@ -54,20 +54,17 @@ int new_sd;
 fd_set current_sockets, ready_sockets;
 int maxRegContent = 0;
 
-void registration(int, char *, struct sockaddr_in, int);
+void registration(int, char *, struct sockaddr_in, char *);
 char *search_content(int, char *, struct sockaddr_in, int, char *);
 void client_download(char *, char *, char *);
 void server_download();
-void deregistration(int, char *);
+void deregistration(int, char *, struct sockaddr_in);
 void online_list(int);
 void local_list();
 void quit(int);
 void handler();
 void printRegisteredContent();
-void *receive_thread(void *);
-void receiving(int);
-void reaper(int);
-int echod(int);
+void removeElementFromRegistration(int);
 
 int main(int argc, char **argv)
 {
@@ -81,7 +78,6 @@ int main(int argc, char **argv)
 	struct sigaction sa;
 	// Data buf
 	char buf[100];
-	maxRegContent = 0;
 	int new_socket;
 
 	struct sockaddr_in tcpServer;
@@ -145,6 +141,7 @@ int main(int argc, char **argv)
 	sa.sa_flags;
 	sigaction(SIGINT, &sa, NULL);
 
+	char contentName[100];
 	/* Main Loop	*/
 	while (1)
 	{
@@ -171,7 +168,7 @@ int main(int argc, char **argv)
 		/*	Content Regisration	*/
 		if (c == 'R')
 		{
-			registration(serverSock, usr, sin, alen);
+			registration(serverSock, usr, sin, NULL);
 		}
 
 		/*	List Content		*/
@@ -190,7 +187,6 @@ int main(int argc, char **argv)
 		if (c == 'D')
 		{
 			// Enter content name
-			char contentName[100];
 
 			printf("Enter content name you want to search:");
 			scanf("%s", contentName);
@@ -202,6 +198,8 @@ int main(int argc, char **argv)
 			{
 				// Content address info retrieved
 				client_download(contentAddrInfo, usr, contentName);
+				// register new content with index server
+				registration(serverSock, usr, sin, contentName);
 			}
 			/* Call registration()		*/
 		}
@@ -210,6 +208,9 @@ int main(int argc, char **argv)
 		if (c == 'T')
 		{
 			/* Call deregistration()	*/
+			printf("Enter content name you want to deregister:");
+			scanf("%s", contentName);
+			deregistration(serverSock, contentName, sin);
 		}
 
 		/*	Quit	*/
@@ -399,12 +400,56 @@ char *search_content(int serverSock, char *name, struct sockaddr_in server, int 
 	return NULL;
 }
 
-void deregistration(int serverSock, char *name)
+void deregistration(int serverSock, char *name, struct sockaddr_in server)
 {
 	/* Contact the index server to deregister a content registration;	   Update nfds. */
+	PDU tPacket, rpdu;
+	// Tpacket -> T | usr | contentName
+	tPacket.type = 'T';
+	strcat(tPacket.data, usr);
+	strcat(tPacket.data, " ");
+	strcat(tPacket.data, name);
+
+	write(serverSock, &tPacket, sizeof(PDU));
+	int alen = sizeof(server);
+
+	// Receive acknowledgement or error from server
+	int k = recvfrom(serverSock, &rpdu, sizeof(PDU), 0,
+					 (struct sockaddr *)&server, &alen);
+
+	if (rpdu.type == 'A')
+	{
+		printf("Deregistered content: %s, maxRegContent: %d\n", name, maxRegContent);
+		// Remove registered content from the list
+		for (int i = 0; i < maxRegContent; i++)
+		{
+			printf("comparing reg content: %s, %s\n", registeredContent[i].name, name);
+			if (strcmp(registeredContent[i].name, name) == 0)
+			{
+				printf("removing local registered content\n");
+				removeElementFromRegistration(i);
+				printRegisteredContent();
+			}
+		}
+	}
+	else if (rpdu.type == 'E')
+	{
+		printf("%s\n", rpdu.data);
+	}
+	return;
 }
 
-void registration(int serverSock, char *name, struct sockaddr_in server, int alen)
+void removeElementFromRegistration(int pos)
+{
+	// shift all the element from index+1 by one position to the left
+	for (int i = pos; i < maxRegContent - 1; i++)
+		registeredContent[i] = registeredContent[i + 1];
+	strcpy(registeredContent[maxRegContent].name, "");
+	registeredContent[maxRegContent].tcpSock = 0;
+	maxRegContent--;
+}
+
+void registration(int serverSock, char *name, struct sockaddr_in server, char *providedContentName)
 {
 	/* Create a TCP socket for content download
 			� one socket per content;
@@ -426,7 +471,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 	tcpAddr.sin_family = AF_INET;
 	tcpAddr.sin_port = htons(0);
 	tcpAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	// tcpAddr.sin_addr.s_addr = inet_addr("10.0.0.251");
 	if (bind(tcpSock, (struct sockaddr *)&tcpAddr, sizeof(tcpAddr)) == -1)
 	{
 		fprintf(stderr, "Can't bind name to socket\n");
@@ -450,9 +494,17 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 
 	printf("buf: %s\n", buf);
 	fflush(stdout);
-	printf("Enter content name: ");
-	scanf("%s", contentName);
-	strcpy(&buf[9], contentName);
+	if (providedContentName == NULL)
+	{
+		printf("Enter content name: ");
+		scanf("%s", contentName);
+		strcpy(&buf[9], contentName);
+	}
+	else
+	{
+		strcpy(contentName, providedContentName);
+	}
+
 	// scanf("%s", &buf[9]);
 
 	memset(buf + strlen(buf), ' ', 100 - strlen(buf) - 1);
@@ -469,7 +521,7 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 
 	// Send register packet to server
 	write(serverSock, &rPacket, sizeof(PDU));
-	alen = sizeof(server);
+	int alen = sizeof(server);
 
 	// Receive acknowledgement or error from server
 	int k = recvfrom(serverSock, &rpdu, sizeof(PDU), 0,
@@ -490,8 +542,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 		strcpy(registeredContent[maxRegContent].name, contentName);
 		maxRegContent++;
 
-		// nfds++;
-		// FD_SET(tcpSock, &afds);
 		if (listen(tcpSock, 5) < 0)
 		{
 			perror("listen");
@@ -550,7 +600,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 					printf("File exists\n");
 					while (1)
 					{
-						// TODO: Currently getting stuck sending the file if it exists
 						// reading file
 						display = fgetc(fp);
 						contentPacket.data[readBufPointer] = display;
@@ -560,7 +609,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 						{
 							// send file contents
 							contentPacket.type = 'C';
-							// strcpy(contentPacket.data, fileBuf);
 							printf("sending content packet: %s\n", contentPacket.data);
 							fflush(stdout);
 							write(new_sd, &contentPacket, sizeof(PDU));
@@ -575,7 +623,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 								printf("sending finished content packet: %s\n", contentPacket.data);
 								fflush(stdout);
 								contentPacket.type = 'C';
-								// strcpy(contentPacket.data, fileBuf);
 								write(new_sd, &contentPacket, sizeof(PDU));
 							}
 							break;
@@ -603,68 +650,6 @@ void registration(int serverSock, char *name, struct sockaddr_in server, int ale
 		printf("Error while registering content. Content might already be registered.\n");
 	}
 }
-/*	reaper		*/
-void reaper(int sig)
-{
-	int status;
-	while (wait3(&status, WNOHANG, (struct rusage *)0) >= 0)
-		;
-}
-
-void *receive_thread(void *arg)
-{
-	int tcpSock = (int)arg;
-	while (1)
-	{
-		sleep(2);
-		receiving(tcpSock);
-	}
-}
-
-void receiving(int tcpSock)
-{
-	int new_sd;
-	struct sockaddr_in client;
-	int client_len = sizeof(struct sockaddr_in);
-	printf("Receive_thread: tcpSock: %d\n", tcpSock);
-
-	// accept tcp client connection
-	while (1)
-	{
-		if (new_sd = accept(tcpSock, (struct sockaddr *)&client, &client_len) < 0)
-		{
-			fprintf(stderr, "Cannot accept client\n");
-			exit(1);
-		}
-		switch (fork())
-		{
-		case 0:
-			(void)close(tcpSock);
-			exit(echod(new_sd));
-			break;
-		default:
-			(void)close(new_sd);
-			break;
-		case -1:
-			fprintf(stderr, "fork: error\n");
-		}
-	}
-}
-
-int echod(int sd)
-{
-	int n;
-	char buf[100];
-	while (n = read(sd, buf, 100))
-	{
-
-		printf("packet read: %s\n", buf);
-		fflush(stdout);
-	}
-
-	close(sd);
-	return (0);
-}
 
 void handler()
 {
@@ -675,7 +660,7 @@ void printRegisteredContent()
 {
 	int i = 0;
 	printf("\nPrinting registered content\n");
-	for (i = 0; i < MAXCON; i++)
+	for (i = 0; i < maxRegContent; i++)
 	{
 		if (registeredContent[i].tcpSock == -1)
 			break;

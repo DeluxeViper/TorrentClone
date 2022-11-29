@@ -55,10 +55,11 @@ typedef struct
 PDU tpdu;
 
 struct sockaddr_in *search(int, char *, char *);
-void registration(int, PDU, struct sockaddr_in, ENTRY *);
-void deregistration(int, char *, struct sockaddr_in *);
+void registration(int, PDU, struct sockaddr_in);
+void deregistration(int, char *, struct sockaddr_in);
 int nameExistsInList(char *, char *);
 void printList();
+void printListWithHead(ENTRY *);
 
 /*
  *------------------------------------------------------------------------
@@ -80,7 +81,10 @@ int main(int argc, char *argv[])
 	struct sockaddr_in fsin; /* the from address of a client	*/
 
 	for (n = 0; n < MAX_NUM_CON; n++)
+	{
+		strcpy(connList[n].peerName, "");
 		connList[n].head = NULL;
+	}
 
 	switch (argc)
 	{
@@ -126,7 +130,7 @@ int main(int argc, char *argv[])
 			// If contained then send the E packet
 			/*	Call registration()
 			 */
-			registration(s, rpdu, fsin, curr_entry);
+			registration(s, rpdu, fsin);
 		}
 
 		/* Search Content		*/
@@ -155,7 +159,6 @@ int main(int argc, char *argv[])
 				strcat(address, ip2);
 				strcat(address, " ");
 				sprintf(address + strlen(address), "%d", clientAddr->sin_port);
-				// strcat(address, ntohs(clientAddr->sin_port));
 				printf("address to send: %s\n", address);
 
 				strcpy(spdu.data, address);
@@ -188,9 +191,93 @@ int main(int argc, char *argv[])
 		{
 			/* Call deregistration()
 			 */
+			deregistration(s, rpdu.data, fsin);
 		}
 	}
 	return;
+}
+
+void deregistration(int s, char *data, struct sockaddr_in fsin)
+{
+	/* De-register the server of that content
+	 */
+	// Search for the content within the server and remove content
+	// Data = usr contentName
+	char *usr, *contentName;
+	PDU aPacket;
+
+	// Parse data
+	usr = strtok(data, " ");
+	contentName = strtok(NULL, " ");
+
+	// Find data within linked list and remove it
+	ENTRY *temp, *prev;
+	int i = 0, j = 0;
+	int matchFound = 1;
+
+	for (i = 0; i < max_index; i++)
+	{
+		// Iterate through peers
+		if (strcmp(usr, connList[i].peerName) != 0)
+		{
+			// If name does not match, keep going
+			continue;
+		}
+		// Found peer, iterate through contents of peer
+		temp = connList[i].head;
+		printf("init curr: %s\n", temp->contentName);
+
+		// Remove content
+		if (temp != NULL && strcmp(temp->contentName, contentName) == 0)
+		{
+			printf("hola\n");
+			connList[i].head = temp->next;
+			free(temp);
+			if (connList[i].head == NULL)
+			{
+				// If list is empty, deregister the entire peer
+				strcpy(connList[i].peerName, "");
+				max_index--;
+			}
+			break;
+		}
+
+		while (temp != NULL && strcmp(temp->contentName, contentName) != 0)
+		{
+			prev = temp;
+			printf("prev:%s, curr: %s, next: %s\n", prev->contentName, temp->contentName, temp->next->contentName);
+			temp = temp->next;
+		}
+
+		if (temp == NULL)
+		{
+			printf("Deregistration: no match found.\n");
+			matchFound = 0;
+			break;
+		}
+
+		prev->next = temp->next;
+
+		free(temp);
+	}
+	printList();
+
+	// Send Ack packet
+	if (matchFound == 0)
+	{
+		// No match found
+		aPacket.type = 'E';
+		strcpy(aPacket.data, "Error with deregistration, no match was found");
+	}
+	else
+	{
+		// Match found
+		aPacket.type = 'A';
+		strcpy(aPacket.data, "Acknowledged");
+	}
+
+	sendto(s, &aPacket, sizeof(PDU), 0,
+		   (struct sockaddr *)&fsin, sizeof(fsin));
 }
 
 struct sockaddr_in *search(int s, char *contentName, char *peerName)
@@ -221,18 +308,12 @@ struct sockaddr_in *search(int s, char *contentName, char *peerName)
 			entry = entry->next;
 		}
 	}
-
 	return NULL;
 }
 
-void deregistration(int s, char *data, struct sockaddr_in *addr)
+void registration(int s, PDU rpdu, struct sockaddr_in fsin)
 {
-	/* De-register the server of that content
-	 */
-}
-
-void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
-{
+	ENTRY *curr_entry = NULL;
 	/* Register the content and the server of the content
 	 */
 	char *tokArr[4]; // [0] = peerName, [1] = contentName, [2] = ip, [3] = port (host format)
@@ -277,9 +358,21 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 		entry->addr.sin_port = atoi(tokArr[3]); // convert ip address back to host
 		entry->addr.sin_addr.s_addr = inet_addr(tokArr[2]);
 
+		// If peer has deleted all its deregistered content then this
+		// is necessary to check
+		int existingPeerIndex = -1;
+		for (int k = 0; k < max_index; k++)
+		{
+			if (strcmp(connList[k].peerName, tokArr[0]) == 0)
+			{
+				existingPeerIndex = k;
+				break;
+			}
+		}
 		// If peer is registering it's first content, then add it first to the
 		// 	connection list
-		if (connList[max_index].head == NULL)
+		// Check if connList has the peerName
+		if (existingPeerIndex == -1) // -1 for peerNameExists indicates that the peer does not exist
 		{
 			strcpy(connList[max_index].peerName, tokArr[0]);
 			printf("Entries are null for peer: %s\n", tokArr[0]);
@@ -292,26 +385,24 @@ void registration(int s, PDU rpdu, struct sockaddr_in fsin, ENTRY *curr_entry)
 		}
 		else
 		{
-			// Peer has registered content before, simply add content to the linkedlist
-			curr_entry = connList[max_index].head;
-			while (curr_entry != NULL)
-			{
-				curr_entry = curr_entry->next;
-			}
+			printf("Peer has registered content before: %d\n", existingPeerIndex);
+			// peer has registered content before, simply add content to the linkedlist
 			curr_entry = entry;
+			curr_entry->next = connList[existingPeerIndex].head;
+			connList[existingPeerIndex].head = curr_entry;
 
 			printList();
+			printf("name exists in list: %d\n", nameExistsInList(tokArr[0], tokArr[1]));
 		}
-
-		// Send SPU -> which will either be an A packet or an E packet based
-		// 	on whether the content was found
-		printf("spdu to send: %c, %s\n", spdu.type, spdu.data);
-		struct sockaddr_in destAddr;
-		sendto(s, &spdu, sizeof(PDU), 0,
-			   (struct sockaddr *)&fsin, sizeof(fsin));
-		printf("sent spdu\n");
-		fflush(stdout);
 	}
+
+	// Send SPU -> which will either be an A packet or an E packet based
+	// 	on whether the content was found
+	printf("spdu to send: %c, %s\n", spdu.type, spdu.data);
+	sendto(s, &spdu, sizeof(PDU), 0,
+		   (struct sockaddr *)&fsin, sizeof(fsin));
+	printf("sent spdu\n");
+	fflush(stdout);
 }
 
 // If found then return 1, if not found then return 0
@@ -364,4 +455,19 @@ void printList()
 		}
 	}
 	return;
+}
+
+void printListWithHead(ENTRY *head)
+{
+	printf("Print list with head.\n");
+	ENTRY *entry = head;
+	while (entry != NULL)
+	{
+		printf("\t\tEntry: %d ");
+		// char *ip = inet_ntop(((struct sockaddr_in *)&entry->addr)->sin_addr);
+		char ip[100];
+		inet_ntop(AF_INET, &(((struct sockaddr_in *)&entry->addr)->sin_addr), ip, 100);
+		printf("contentName: %s, ip: %s, port: %d\n", entry->contentName, ip, entry->addr.sin_port);
+		entry = entry->next;
+	}
 }
