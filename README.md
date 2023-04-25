@@ -3,6 +3,13 @@
 ## TLDR
 A P2P application (created in C) that allows peers to share and download content through an index server via UDP and TCP communication. 
 
+## Usage
+1. Make sure to compile the peer-sk and server-sk files (I used GCC 8.5.0)
+2. Run the server: `./server-sk <port_number>`
+3. Run peer(s): `./peer-sk <port_number`
+
+Note: For demo purposes you can clone the peer-sk executable into different folders to emulate content sharing. 
+
 ## Technical Details
 
 This torrent clone project consists of a P2P (Peer-to-Peer) application that allows clients to share and download content through an index server utilizing UDP for communication and TCP for content download. The peers act as clients to upload and download content and act as servers to allow other peers to view and download content, making the peer both a client and server for content. The index server facilitates these activities allowing the peers to exchange content amongst each other.
