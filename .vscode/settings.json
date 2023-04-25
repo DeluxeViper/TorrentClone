@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "filesystem": "c",
+        "typeinfo": "c"
+    }
+}
